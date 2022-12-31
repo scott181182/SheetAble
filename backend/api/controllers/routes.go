@@ -69,6 +69,9 @@ func (server *Server) SetupRouter() {
 	secureApi.DELETE("/composer/:composerName", server.DeleteComposer)
 	api.GET("/composer/portrait/:composerName", server.ServePortraits)
 
+	// GraphQL route
+	secureApi.POST("/graphql", server.MakeGraphQLHandler())
+
 	// Serve React
 	appBox := rice.MustFindBox("../../../frontend/build")
 
