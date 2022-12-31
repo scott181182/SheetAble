@@ -11,24 +11,6 @@ import (
 
 
 
-var sheetType = graphql.NewObject(graphql.ObjectConfig{
-	Name: "Sheet",
-	Fields: graphql.Fields{
-		"SheetName": &graphql.Field{ Type: graphql.String },
-		"SafeSheetName": &graphql.Field{ Type: graphql.String, },
-		"Composer": &graphql.Field{ Type: graphql.String, },
-		"SafeComposer": &graphql.Field{ Type: graphql.String, },
-		"InformationText": &graphql.Field{ Type: graphql.String, },
-		"PdfUrl": &graphql.Field{ Type: graphql.String, },
-		"Tags": &graphql.Field{ Type: graphql.NewList(graphql.String), },
-
-		"CreatedAt": &graphql.Field{ Type: graphql.String, },
-		"UpdatedAt": &graphql.Field{ Type: graphql.String, },
-		"ReleaseDate": &graphql.Field{ Type: graphql.String, },
-		"UploaderID": &graphql.Field{ Type: graphql.Int, },
-	},
-})
-
 func (server *Server) ResolveSheets(p graphql.ResolveParams) (interface{}, error) {
 	page, _ := p.Args["page"].(int)
 	pageSize, _ := p.Args["pageSize"].(int)
@@ -46,9 +28,103 @@ func (server *Server) ResolveSheets(p graphql.ResolveParams) (interface{}, error
 	pageNew, err := sheet.List(server.DB, pagination, "")
 	return pageNew.Rows, err
 }
+func (server *Server) ResolveComposers(p graphql.ResolveParams) (interface{}, error) {
+	page, _ := p.Args["page"].(int)
+	pageSize, _ := p.Args["pageSize"].(int)
+
+	if pageSize == 0 { pageSize = 50 }
+	if page == 0 { page = 1 }
+
+	pagination := models.Pagination{
+		Sort:  "updated_at desc",
+		Limit: pageSize,
+		Page:  page,
+	}
+
+	var composer models.Composer
+	pageNew, err := composer.List(server.DB, pagination)
+	return pageNew.Rows, err
+}
 
 func (server *Server) GetGraphQLSchema() *graphql.Schema {
-	var rootQuery = graphql.NewObject(graphql.ObjectConfig{
+	sheetType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Sheet",
+		Fields: graphql.Fields{
+			"SheetName": &graphql.Field{ Type: graphql.String },
+			"SafeSheetName": &graphql.Field{ Type: graphql.String, },
+			"ComposerName": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(*models.Sheet)
+					return src.Composer, nil
+				},
+			},
+			"SafeComposerName": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(*models.Sheet)
+					return src.SafeComposer, nil
+				},
+			},
+			"InformationText": &graphql.Field{ Type: graphql.String, },
+			"PdfUrl": &graphql.Field{ Type: graphql.String, },
+			"Tags": &graphql.Field{ Type: graphql.NewList(graphql.String), },
+
+			"CreatedAt": &graphql.Field{ Type: graphql.String, },
+			"UpdatedAt": &graphql.Field{ Type: graphql.String, },
+			"ReleaseDate": &graphql.Field{ Type: graphql.String, },
+			"UploaderID": &graphql.Field{ Type: graphql.Int, },
+		},
+	})
+	composerType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Composer",
+		Fields: graphql.Fields{
+			"SafeName": &graphql.Field{ Type: graphql.String },
+			"Name": &graphql.Field{ Type: graphql.String, },
+			"PortraitURL": &graphql.Field{ Type: graphql.String, },
+			"Epoch": &graphql.Field{ Type: graphql.String, },
+
+			"CreatedAt": &graphql.Field{ Type: graphql.String, },
+			"UpdatedAt": &graphql.Field{ Type: graphql.String, },
+		},
+	})
+
+	sheetType.AddFieldConfig("Composer", &graphql.Field{
+		Type: composerType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, _ := p.Source.(*models.Sheet)
+			var composerModel models.Composer
+			composer, err := composerModel.FindComposerBySafeName(server.DB, src.SafeComposer)
+			return composer, err
+		},
+	})
+	composerType.AddFieldConfig("Sheets", &graphql.Field{
+		Type: graphql.NewList(sheetType),
+		Args: graphql.FieldConfigArgument{
+			"page": &graphql.ArgumentConfig{ Type: graphql.Int },
+			"pageSize": &graphql.ArgumentConfig{ Type: graphql.Int },
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, _ := p.Source.(*models.Composer)
+			page, _ := p.Args["page"].(int)
+			pageSize, _ := p.Args["pageSize"].(int)
+		
+			if pageSize == 0 { pageSize = 50 }
+			if page == 0 { page = 1 }
+		
+			pagination := models.Pagination{
+				Sort:  "updated_at desc",
+				Limit: pageSize,
+				Page:  page,
+			}
+
+			var sheet models.Sheet
+			pageNew, err := sheet.List(server.DB, pagination, src.SafeName)
+			return pageNew.Rows, err
+		},
+	})
+
+	rootQuery := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RootQuery",
 		Fields: graphql.Fields{
 			"sheets": &graphql.Field{
@@ -59,11 +135,20 @@ func (server *Server) GetGraphQLSchema() *graphql.Schema {
 					"pageSize": &graphql.ArgumentConfig{ Type: graphql.Int },
 				},
 				Resolve: server.ResolveSheets,
-			} ,
+			},
+			"composers": &graphql.Field{
+				Type: graphql.NewList(composerType),
+				Description: "List of Composers",
+				Args: graphql.FieldConfigArgument{
+					"page": &graphql.ArgumentConfig{ Type: graphql.Int },
+					"pageSize": &graphql.ArgumentConfig{ Type: graphql.Int },
+				},
+				Resolve: server.ResolveComposers,
+			},
 		},
 	})
 	
-	var SheetableSchema, _ = graphql.NewSchema(graphql.SchemaConfig{
+	SheetableSchema, _ := graphql.NewSchema(graphql.SchemaConfig{
 		Query: rootQuery,
 	})
 	return &SheetableSchema
