@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"time"
+
 	"github.com/SheetAble/SheetAble/backend/api/models"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/handler"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +50,51 @@ func (server *Server) ResolveComposers(p graphql.ResolveParams) (interface{}, er
 }
 
 func (server *Server) GetGraphQLSchema() *graphql.Schema {
+	datetimeType := graphql.NewScalar(graphql.ScalarConfig{
+		Name: "DateTime",
+		Description: "An ISO-formatted DateTime String",
+		Serialize: func(value interface{}) interface{} {
+			dt, isTime := value.(time.Time)
+			if !isTime {
+				// Not sure how to return errors here
+				// return graphql.Errorf("Cannot serialize non-time.Time as DateTime")
+				return nil
+			}
+			return dt.Format(time.RFC3339)
+		},
+		ParseValue: func(value interface{}) interface{} {
+			str, isString := value.(string)
+			if !isString {
+				// Not sure how to return errors here
+				// return nil, graphql.Errorf("Cannot parse non-string literal as DateTime")
+				return nil
+			}
+			dt, err := time.Parse(time.RFC3339, str)
+			if err != nil {
+				// Not sure how to return errors here
+				// return nil, graphql.Errorf("Cannot parse non-string literal as DateTime")
+				return nil
+			}
+			return dt
+		},
+		ParseLiteral: func(valueAST ast.Value) interface{} {
+			// Could also check `valueAST.GetKind()` here
+			str, isString := valueAST.GetValue().(string)
+			if !isString {
+				// Not sure how to return errors here
+				// return nil, graphql.Errorf("Cannot parse non-string literal as DateTime")
+				return nil
+			}
+			dt, err := time.Parse(time.RFC3339, str)
+			if err != nil {
+				// Not sure how to return errors here
+				// return nil, graphql.Errorf("Cannot parse non-string literal as DateTime")
+				return nil
+			}
+			return dt
+		},
+	})
+
 	sheetType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Sheet",
 		Fields: graphql.Fields{
@@ -70,9 +118,9 @@ func (server *Server) GetGraphQLSchema() *graphql.Schema {
 			"PdfUrl": &graphql.Field{ Type: graphql.String, },
 			"Tags": &graphql.Field{ Type: graphql.NewList(graphql.String), },
 
-			"CreatedAt": &graphql.Field{ Type: graphql.String, },
-			"UpdatedAt": &graphql.Field{ Type: graphql.String, },
-			"ReleaseDate": &graphql.Field{ Type: graphql.String, },
+			"CreatedAt": &graphql.Field{ Type: datetimeType, },
+			"UpdatedAt": &graphql.Field{ Type: datetimeType, },
+			"ReleaseDate": &graphql.Field{ Type: datetimeType, },
 			"UploaderID": &graphql.Field{ Type: graphql.Int, },
 		},
 	})
@@ -84,8 +132,8 @@ func (server *Server) GetGraphQLSchema() *graphql.Schema {
 			"PortraitURL": &graphql.Field{ Type: graphql.String, },
 			"Epoch": &graphql.Field{ Type: graphql.String, },
 
-			"CreatedAt": &graphql.Field{ Type: graphql.String, },
-			"UpdatedAt": &graphql.Field{ Type: graphql.String, },
+			"CreatedAt": &graphql.Field{ Type: datetimeType, },
+			"UpdatedAt": &graphql.Field{ Type: datetimeType, },
 		},
 	})
 
